@@ -1,7 +1,8 @@
 # degu-client
 degu client part
 
-Python API is still in early dev.
+Python API is still in early dev, library use std python3 lib, but dgu utility use docopt module ( `pip install docopt` )
+
 
 ### Main API
 
