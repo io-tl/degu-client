@@ -76,3 +76,5 @@ $ dgu ghost 192.168.0.49 "touch /tmp/pwneeee"
 [    INFO  18:58.45][degu ]: ghost executing b'touch /tmp/pwneeee'
 [   DEBUG  18:58.45][degu ]: executing : b'touch /tmp/pwneeee'
 ```
+
+[![asciicast](https://asciinema.org/a/Lwt1Ynp1v0m96r55hXvcVC1uT.svg)](https://asciinema.org/a/Lwt1Ynp1v0m96r55hXvcVC1uT)
