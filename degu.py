@@ -341,6 +341,18 @@ class degu(object):
     def __repr__(self):
         return f"<DEGU ({self.host})>"
 
+
+    @staticmethod
+    def getpub(priv):
+        """ get degu public key from private key """
+        lib =  ctypes.CDLL(DEGU)
+        pub = ctypes.create_string_buffer(b"\x00"*32)
+        lib.xpub(pub,priv)
+        ret = "#define MASTER_PUBKEY {"+ ",".join( ["0x%02x"%c for c in pub.value] ) + "}; \n"
+        ret += '// pub= '+binascii.hexlify(pub.value).decode()
+        return ret
+
+
     @staticmethod
     def keygen():
         """ degu keygen function """
