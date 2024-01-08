@@ -1,2 +1,4 @@
 *.pyc
 __pycache__
+*.o
+examples/pty/sslpty

